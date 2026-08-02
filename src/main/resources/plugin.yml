@@ -1,0 +1,17 @@
+name: NexusSeasons
+version: ${project.version}
+main: com.nexusuniverse.seasons.NexusSeasonsPlugin
+api-version: '1.21'
+author: Nexus Universe
+description: Year/season/day tracking, seasonal plant growth and mob spawn rates, winter snow accumulation, and a public API for other Nexus plugins (survival mob/disease danger, and eventually Kairos storyline hooks) to read the current season.
+
+commands:
+  nexusseasons:
+    description: View and manage the season clock.
+    aliases: [seasons, ns3]
+    usage: /nexusseasons <status|setyear <n>|setseason <name>|setday <n>|advance|reload|cyclelock <on|off|status>>
+
+permissions:
+  nexusseasons.admin:
+    description: Manage NexusSeasons.
+    default: op
