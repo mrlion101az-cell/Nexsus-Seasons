@@ -104,13 +104,17 @@ public class NexusSeasonsPlugin extends JavaPlugin implements NexusSeasonsAPI {
         }
 
         if (config.customDayNightEnabled()) {
-            // custom 12h-day/12h-night cycle drives world time itself, and
-            // signals advanceOneDay when a full cycle completes
+            // custom day/night cycle drives world time itself, and signals advanceOneDay when a full cycle completes
             dayNightCycle = new DayNightCycleManager(this, config, this::advanceOneDay);
             dayNightCycle.start();
+            getLogger().info("Custom day/night cycle is ON -- " + config.dayLengthMinutes()
+                    + " real minute(s) of day, " + config.nightLengthMinutes() + " real minute(s) of night.");
         } else {
             // one Minecraft day (24000 ticks) = one season-day
             Bukkit.getScheduler().runTaskTimer(this, this::advanceOneDay, 24000L, 24000L);
+            getLogger().warning("Custom day/night cycle is OFF (day-night.enabled: false in config.yml) -- "
+                    + "vanilla's own day/night is running instead. If you expected the custom cycle to be "
+                    + "active, this is very likely why -- flip that key to true and restart.");
         }
 
         // independent of which day/night/weather mode is active above -- also protects vanilla's
@@ -118,6 +122,11 @@ public class NexusSeasonsPlugin extends JavaPlugin implements NexusSeasonsAPI {
         this.cycleLock = new CycleLockManager(this, config);
         cycleLock.start();
         getServer().getPluginManager().registerEvents(new CycleLockGuard(config), this);
+        getLogger().info("Cycle lock is " + (config.cycleLockEnabled() ? "ON" : "OFF")
+                + (config.cycleLockEnabled()
+                        ? " -- gamerule/time/weather commands that would disable the cycle(s) above are blocked/corrected."
+                        : " -- gamerule/time/weather commands can freely disable the cycle(s) above. Turn this on with "
+                          + "/nexusseasons cyclelock on if something on the server keeps turning the day cycle off."));
 
         long sweepIntervalTicks = 20L * config.sweepIntervalSeconds();
         Bukkit.getScheduler().runTaskTimer(this, () -> visualManager.tick(clock.season()), sweepIntervalTicks, sweepIntervalTicks);

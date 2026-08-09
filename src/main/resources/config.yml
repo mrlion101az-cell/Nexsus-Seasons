@@ -35,20 +35,20 @@ mob-spawns:
 
 # Override vanilla's day/night cycle with a fixed, even 12-hour-day /
 # 12-hour-night split stretched across real time, instead of vanilla's
-# ~20-real-minute full cycle. Only affects normal (overworld-type)
+# ~24-real-hour full cycle. Only affects normal (overworld-type)
 # worlds -- the Nether and the End are untouched.
 # NOTE: this is read once at startup. Flipping "enabled" and running
 # /nexusseasons reload will NOT toggle it live -- restart the server.
 #
-# Defaults below give a 12-real-hour full day/night cycle (6h day + 6h
-# night), the same even day/night split a real 24-hour day has, just
-# compressed 2x into half a real day instead of a whole one. Change
+# Defaults below give a full 24-real-hour day/night cycle (12h day + 12h
+# night, with vanilla's usual sunrise/sunset transition still happening
+# at the boundary between them, same as any Minecraft day). Change
 # day-length-minutes/night-length-minutes independently if you want a
 # different split or total length -- they don't have to match each other.
 day-night:
   enabled: true
-  day-length-minutes: 360
-  night-length-minutes: 360
+  day-length-minutes: 720
+  night-length-minutes: 720
 
 # Same idea as day-night above, applied to weather: instead of leaving vanilla's own random
 # weather engine in charge and just protecting it from being disabled, NexusSeasons becomes the
@@ -366,6 +366,19 @@ waves:
     reach: 20
     # hard cap on how many columns get touched per player per pass
     blocks-per-tick: 150
+    # self-healing safety net: periodically clears any water sitting above the real water
+    # surface anywhere near an online player -- automatic version of /nexusseasons wavereset,
+    # catching leaked/stuck raised water on its own instead of needing an admin to notice and run
+    # the command by hand. Deliberately lighter than the manual command (only clears genuinely
+    # untracked excess, doesn't force-reset every active wave train server-wide), so it shouldn't
+    # be visible/disruptive when nothing's actually wrong.
+    auto-cleanup:
+      enabled: true
+      interval-minutes: 5
+      # kept smaller than wavereset's own default radius since this runs on a recurring schedule
+      # near every online player rather than once on demand -- raise it if leaks are still
+      # showing up outside this range between sweeps
+      radius: 24
 
 # A single dramatic coastal surge, built on the same "advance inland then recede, remembering and
 # restoring every block it temporarily floods" engine hurricane storm-surge uses. Real warning

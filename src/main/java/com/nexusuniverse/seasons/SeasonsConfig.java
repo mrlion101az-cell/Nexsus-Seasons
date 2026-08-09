@@ -78,15 +78,15 @@ public class SeasonsConfig {
     }
 
     public boolean customDayNightEnabled() {
-        return plugin.getConfig().getBoolean("day-night.enabled", false);
+        return plugin.getConfig().getBoolean("day-night.enabled", true);
     }
 
     public int dayLengthMinutes() {
-        return Math.max(1, plugin.getConfig().getInt("day-night.day-length-minutes", 360));
+        return Math.max(1, plugin.getConfig().getInt("day-night.day-length-minutes", 720));
     }
 
     public int nightLengthMinutes() {
-        return Math.max(1, plugin.getConfig().getInt("day-night.night-length-minutes", 360));
+        return Math.max(1, plugin.getConfig().getInt("day-night.night-length-minutes", 720));
     }
 
     public boolean cycleLockEnabled() {
@@ -581,6 +581,26 @@ public class SeasonsConfig {
     /** Hard cap on how many columns get touched per player per pass -- bounds the cost of a wide/deep field. */
     public int waveTrainBlocksPerTick() {
         return Math.max(10, plugin.getConfig().getInt("waves.wave-train.blocks-per-tick", 150));
+    }
+
+    /**
+     * Whether the same baseline-detect-and-revert sweep behind the manual /nexusseasons wavereset
+     * command also runs automatically and periodically near every online player -- a self-healing
+     * safety net so leaked/stuck raised water (leftover from before the BlockFromToEvent fix, or
+     * any other untracked cause) gets corrected on its own instead of needing an admin to notice it
+     * and run the command by hand. On by default given how often this has come up.
+     */
+    public boolean waveTrainAutoCleanupEnabled() {
+        return plugin.getConfig().getBoolean("waves.wave-train.auto-cleanup.enabled", true);
+    }
+
+    public int waveTrainAutoCleanupIntervalMinutes() {
+        return Math.max(1, plugin.getConfig().getInt("waves.wave-train.auto-cleanup.interval-minutes", 5));
+    }
+
+    /** Kept smaller than wavereset's own max radius by default -- this runs on its own schedule near every online player rather than once on demand, so a smaller area per pass keeps the recurring cost down. */
+    public int waveTrainAutoCleanupRadius() {
+        return Math.max(4, Math.min(64, plugin.getConfig().getInt("waves.wave-train.auto-cleanup.radius", 24)));
     }
 
     // --- tsunami (one-off event, real warning before it hits) ---

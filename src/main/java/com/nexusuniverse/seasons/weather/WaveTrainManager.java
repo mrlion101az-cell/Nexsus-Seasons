@@ -46,6 +46,13 @@ import java.util.UUID;
  * registry below, shared across every player's field) -- this only stops spreading from water
  * this system itself put there; it never touches normal water anywhere else on the server.
  *
+ * On top of that prevention, a self-healing safety net (runAutomaticCleanup(), config
+ * waves.wave-train.auto-cleanup) periodically corrects any water that's ALREADY leaked out --
+ * from before that fix existed, or any other untracked cause -- without needing an admin to
+ * notice and run /nexusseasons wavereset by hand. It only ever clears water it can positively
+ * identify as untracked excess (raisedBlocks is checked and skipped), so a currently-active,
+ * legitimately-raised ridge is never disturbed by it.
+ *
  * Runs per-player (only for players confirmed standing at/in a qualifying body, reusing the same
  * WaterBodyDetector size check the rest of this "crazy weather" layer uses) rather than as one
  * shared whole-world field -- simpler and bounded, at the cost of some redundant work if several
@@ -70,6 +77,7 @@ public class WaveTrainManager implements Listener {
     private final Set<RaisedBlock> raisedBlocks = new HashSet<>();
     private long clockTicks;
     private BukkitTask task;
+    private BukkitTask autoCleanupTask;
 
     public WaveTrainManager(JavaPlugin plugin, SeasonsConfig config, WindManager wind,
                              TsunamiManager tsunami, HurricaneManager hurricane) {
@@ -85,15 +93,39 @@ public class WaveTrainManager implements Listener {
         Bukkit.getPluginManager().registerEvents(this, plugin);
         int interval = config.waveTrainTickInterval();
         task = Bukkit.getScheduler().runTaskTimer(plugin, this::tick, interval, interval);
+
+        if (config.waveTrainAutoCleanupEnabled()) {
+            long autoInterval = 20L * 60L * config.waveTrainAutoCleanupIntervalMinutes();
+            autoCleanupTask = Bukkit.getScheduler().runTaskTimer(plugin, this::runAutomaticCleanup, autoInterval, autoInterval);
+        }
     }
 
     public void stop() {
         if (task != null) task.cancel();
+        if (autoCleanupTask != null) autoCleanupTask.cancel();
         for (PlayerField field : fields.values()) {
             revertAll(field);
         }
         fields.clear();
         raisedBlocks.clear();
+    }
+
+    /**
+     * The self-healing safety net: runs a lighter version of the wavereset sweep automatically near
+     * every currently-online player. Deliberately does NOT do what the manual command's first pass
+     * does (force-reverting every currently-tracked PlayerField globally) -- that's appropriate for
+     * a deliberate, one-off admin action, but running it automatically every few minutes would
+     * interrupt perfectly healthy, actively-scrolling wave trains near OTHER players every single
+     * pass, which would look like far more "glitching" than it actually fixes. This only clears
+     * genuinely untracked excess water sitting above the detected baseline -- exactly the leaked
+     * case this whole safety net exists for -- and leaves any currently-managed wave train alone.
+     */
+    private void runAutomaticCleanup() {
+        int radius = config.waveTrainAutoCleanupRadius();
+        for (Player player : Bukkit.getOnlinePlayers()) {
+            if (player.getWorld().getEnvironment() != World.Environment.NORMAL) continue;
+            clearUntrackedExcess(player.getLocation(), radius);
+        }
     }
 
     /** Stops vanilla fluid physics from spreading a raised ridge beyond the exact blocks this class placed and is tracking -- see class doc. Never affects any other water on the server. */
@@ -226,16 +258,13 @@ public class WaveTrainManager implements Listener {
      * (or from any other untracked cause), which this system has no record of and can't revert
      * on its own since it only ever tracks blocks it itself placed.
      *
-     * Two passes, run once, on demand, from an admin command -- never automatic:
-     *  1. Force-reverts every block currently tracked as raised, regardless of ridge/gap state --
-     *     an instant fix for anything legitimately stuck in the normal tracking.
-     *  2. A baseline-detection sweep for everything else: raising water only ever ADDS height, so
-     *     the lowest "top of water" found anywhere in the sampled area is almost always a column
-     *     that was never touched -- i.e. genuinely the real, undisturbed surface. Once that
-     *     baseline is known, anything sitting above it anywhere in the full area is excess and
-     *     gets cleared. Deliberately does NOT touch anything at or below that detected baseline,
-     *     so it can't accidentally remove a player's dock, boat, or any other legitimate structure
-     *     sitting above the water -- only the leaked layer itself.
+     * Two passes, run on demand from an admin command:
+     *  1. Force-reverts every block currently tracked as raised (server-wide, not just near
+     *     center), regardless of ridge/gap state -- an instant fix for anything legitimately stuck
+     *     in the normal tracking. This step is deliberately NOT part of the lighter automatic
+     *     sweep below (see runAutomaticCleanup()'s doc) since it would interrupt other players'
+     *     perfectly healthy wave trains every time it ran.
+     *  2. clearUntrackedExcess() -- see its own doc; this is the part the automatic sweep also uses.
      *
      * Returns how many blocks it actually cleared.
      */
@@ -247,6 +276,18 @@ public class WaveTrainManager implements Listener {
         }
         fields.clear();
 
+        return cleared + clearUntrackedExcess(center, radius);
+    }
+
+    /**
+     * The baseline-detect-and-clear half of cleanupArea(), split out on its own so the automatic
+     * safety net (runAutomaticCleanup()) can run just this part without also force-reverting every
+     * currently-tracked PlayerField server-wide -- see that method's doc for why. Never touches the
+     * fields/raisedBlocks bookkeeping at all; purely a raw-block-level correction for water this
+     * class has no tracking record of. Returns how many blocks it actually cleared.
+     */
+    private int clearUntrackedExcess(Location center, int radius) {
+        int cleared = 0;
         World world = center.getWorld();
         int baseX = center.getBlockX();
         int baseZ = center.getBlockZ();
@@ -263,7 +304,9 @@ public class WaveTrainManager implements Listener {
         }
         if (baseline == null) return cleared; // no water found anywhere nearby at all
 
-        // pass 2: clear anything above that baseline, full resolution this time
+        // pass 2: clear anything above that baseline, full resolution this time -- skipping
+        // anything currently tracked in raisedBlocks, since an active ridge is SUPPOSED to sit
+        // above the baseline; only genuinely untracked (leaked) water above it counts as excess
         for (int dx = -radius; dx <= radius; dx++) {
             for (int dz = -radius; dz <= radius; dz++) {
                 int x = baseX + dx;
@@ -272,6 +315,7 @@ public class WaveTrainManager implements Listener {
                 if (top == null || top <= baseline) continue;
 
                 for (int y = baseline + 1; y <= top; y++) {
+                    if (raisedBlocks.contains(new RaisedBlock(x, y, z, world.getName()))) continue;
                     Block block = world.getBlockAt(x, y, z);
                     if (block.getType() == Material.WATER) {
                         block.setType(Material.AIR);
